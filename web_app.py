@@ -17,7 +17,7 @@ from enum import Enum
 
 # --- Configuration & Setup ---
 load_dotenv()
-st.set_page_config(page_title="OEP-COI CHECK", layout="wide")
+st.set_page_config(page_title="COI CHECK", layout="wide")
 
 # Initialize simple rate limiting
 if 'last_search_time' not in st.session_state:
@@ -505,15 +505,15 @@ def show_detail_dialog(title, date, result_data):
         with st.expander("📝 Original Input", expanded=False):
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("**Potential Conflicts of Interest:**")
+                st.markdown("**Potential COI:**")
                 st.code(inputs.get("fixed", "N/A"), language=None)
             with col2:
-                st.markdown("**Candidate Authors:**")
+                st.markdown("**Author(s):**")
                 st.code(inputs.get("candidate", "N/A"), language=None)
     
     # Show search terms if available
     if search_terms:
-        with st.expander("🔍 Generated Search Queries", expanded=False):
+        with st.expander("Generated Search Queries", expanded=False):
             for author_name, terms in search_terms.items():
                 st.markdown(f"**{author_name}:**")
                 col1, col2 = st.columns(2)
@@ -597,7 +597,7 @@ with st.container():
     
     if st.button("Start Search", disabled=not can_search):
         if not fixed_input.strip() or not candidate_input.strip():
-            st.error("⚠️ Please enter both Potential COI names and Candidate Authors to proceed.")
+            st.error("⚠️ Please enter both Potential COI names and Author(s) to proceed.")
         else:
             # Acquire lock
             if not search_lock.try_acquire():
@@ -612,7 +612,7 @@ with st.container():
                     fixed_authors = [n.strip() for n in fixed_input.split('\n') if n.strip()]
                     candidate_authors = [n.strip() for n in candidate_input.split('\n') if n.strip()]
                     
-                    st.info(f"🔍 Checking {len(fixed_authors)} potential COI author(s) against {len(candidate_authors)} candidate author(s)...")
+                    st.info(f"Checking {len(fixed_authors)} potential COI against {len(candidate_authors)} author(s)...")
                     
                     all_raw_results = []
                     generated_search_terms = {}
@@ -670,7 +670,7 @@ with st.container():
                         }
                     
                     # Use st.status for a better progress experience
-                    with st.status("🔍 Checking potential conflicts...", expanded=True) as status:
+                    with st.status("Checking potential conflicts...", expanded=True) as status:
                         processed = 0
                         total = len(fixed_authors) * len(candidate_authors)
                         
@@ -689,7 +689,7 @@ with st.container():
                                 res_s2 = fetch_semanticscholar(f_given, f_family, c_given, c_family)
                                 res_doaj = fetch_doaj(f_given, f_family, c_given, c_family)
                                 
-                                current_pair_name = f"COI: {f_family}, {f_given} ↔ Candidate: {c_family}, {c_given}"
+                                current_pair_name = f"COI: {f_family}, {f_given} with Author: {c_family}, {c_given}"
                                 combined_res = res_pm + res_oa + res_cr + res_s2 + res_doaj
                                 for r in combined_res:
                                     r["matched_pair"] = current_pair_name
@@ -699,7 +699,7 @@ with st.container():
                                 
                                 processed += 1
                         
-                        status.update(label="✅ Search Completed!", state="complete", expanded=False)
+                        status.update(label="Search Completed!", state="complete", expanded=False)
                     unique_results = merge_results(all_raw_results)
                     
                     # Database save reset
@@ -711,7 +711,7 @@ with st.container():
                     # save_results_to_db call removed
                     # st.toast(f"✓ Results saved: '{save_name}'")
                     
-                    st.success("✅ Search completed successfully!")
+                    st.success("Search completed successfully!")
 
                     # Auto - Popup
                     # wrapping in a clean structure for the dialog
@@ -723,7 +723,7 @@ with st.container():
                     show_detail_dialog(job_title, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), complex_result)
                 
                 except Exception as e:
-                    st.error(f"❌ An error occurred during search: {e}")
+                    st.error(f"An error occurred during search: {e}")
                 finally:
                     # Always release lock
                     search_lock.release()
