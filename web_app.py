@@ -24,6 +24,7 @@ if 'last_search_time' not in st.session_state:
     st.session_state.last_search_time = 0
 if 'is_searching' not in st.session_state:
     st.session_state.is_searching = False
+    
 
 USER_EMAIL = os.getenv("USER_EMAIL", "your.email@example.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY", None)
@@ -404,6 +405,16 @@ def merge_results(all_results):
         
         if key in merged:
             merged[key]["sources"].append(r["source"])
+           
+            new_pair = r.get("matched_pair")
+            if new_pair and new_pair not in merged[key].get("matched_pairs", []):
+                if "matched_pairs" not in merged[key]:
+                    merged[key]["matched_pairs"] = []
+                merged[key]["matched_pairs"].append(new_pair)
+
+
+            # Preserve Match scores if present in the new result but not in existing
+
             merged[key]["sources"] = list(set(merged[key]["sources"])) # dedup sources
             
             # Preserve Match scores if present in the new result but not in existing
@@ -416,6 +427,9 @@ def merge_results(all_results):
                      merged[key]["details"] = f"{current_details} | {new_details}"
         else:
             r["sources"] = [r["source"]]
+            # --- 修改：在第一次存入时就初始化匹配对列表 ---
+            r["matched_pairs"] = [r.get("matched_pair")] if r.get("matched_pair") else []
+            # ----------------------------------------
             merged[key] = r
     
     final_list = list(merged.values())
@@ -518,6 +532,12 @@ def show_detail_dialog(title, date, result_data):
         for idx, paper in enumerate(papers, 1):
             with st.container():
                 st.markdown(f"**{idx}. {paper.get('title', 'No Title')}**")
+              
+
+                if "matched_pairs" in paper:
+                    pairs_str = " | ".join(paper["matched_pairs"])
+                    st.caption(f"**Matched Pair(s):** {pairs_str}")
+
                 
                 col1, col2, col3 = st.columns([2, 2, 3])
                 with col1:
@@ -550,16 +570,17 @@ def show_detail_dialog(title, date, result_data):
 
 
 with st.container():
-    st.header("COI Check")
+    st.header("Conflicts of Interest (COI) Check")
+    st.caption("Enter one name per line: First name; Last name")
     
     col1, col2 = st.columns(2)
     with col1:
         # manuscript_title input removed
-        fixed_input = st.text_area("Potential Conflicts of Interest (One per line, 'First;Last')", height=150)
+        fixed_input = st.text_area("Potential COI", height=150)
 
     with col2:
 
-        candidate_input = st.text_area("Candidate Authors to Check (One per line, 'First;Last')", height=150)
+        candidate_input = st.text_area("Author(s)", height=150)
     
     # Check rate limiting
     # Check global status
@@ -668,7 +689,13 @@ with st.container():
                                 res_s2 = fetch_semanticscholar(f_given, f_family, c_given, c_family)
                                 res_doaj = fetch_doaj(f_given, f_family, c_given, c_family)
                                 
-                                all_raw_results.extend(res_pm + res_oa + res_cr + res_s2 + res_doaj)
+                                current_pair_name = f"COI: {f_family}, {f_given} ↔ Candidate: {c_family}, {c_given}"
+                                combined_res = res_pm + res_oa + res_cr + res_s2 + res_doaj
+                                for r in combined_res:
+                                    r["matched_pair"] = current_pair_name
+                                
+                                all_raw_results.extend(combined_res)
+  
                                 
                                 processed += 1
                         
