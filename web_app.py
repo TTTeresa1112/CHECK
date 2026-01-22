@@ -24,6 +24,8 @@ if 'last_search_time' not in st.session_state:
     st.session_state.last_search_time = 0
 if 'is_searching' not in st.session_state:
     st.session_state.is_searching = False
+if 'history_queue' not in st.session_state:
+    st.session_state.history_queue = []
     
 
 USER_EMAIL = os.getenv("USER_EMAIL", "your.email@example.com")
@@ -45,7 +47,10 @@ def normalize_name(name):
     return re.sub(r'[^a-zA-Z\s,.\u00C0-\u017F]', '', name).strip()
 
 def parse_semicolon_name(name):
-    """Parses 'First;Last' or 'Last,First' or 'First Last'."""
+    """Parses 'First;Last' or 'First,Last' or 'First Last'.
+    
+    For both ';' and ',': text BEFORE separator = First Name, text AFTER separator = Last Name.
+    """
     if ';' in name:
         parts = name.split(';', 1)
         if len(parts) == 2:
@@ -53,7 +58,7 @@ def parse_semicolon_name(name):
     if ',' in name:
         parts = name.split(',', 1)
         if len(parts) == 2:
-            return parts[1].strip(), parts[0].strip()
+            return parts[0].strip(), parts[1].strip()
     parts = name.split()
     if len(parts) >= 2:
         return ' '.join(parts[:-1]), parts[-1]
@@ -492,7 +497,7 @@ search_lock = get_global_search_lock()
 @st.dialog("Detailed Search Results", width="large")
 def show_detail_dialog(title, date, result_data):
     """Display detailed search results in a dialog."""
-    st.subheader(f"📋 {title}")
+    st.subheader(f"{title}")
     st.caption(f"Search Date: {date}")
     
     # Get data structure
@@ -502,7 +507,7 @@ def show_detail_dialog(title, date, result_data):
     
     # Show inputs if available
     if inputs:
-        with st.expander("📝 Original Input", expanded=False):
+        with st.expander("Original Input", expanded=False):
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**Potential COI:**")
@@ -720,7 +725,16 @@ with st.container():
                         "search_terms": generated_queries,
                         "inputs": input_data
                     }
-                    show_detail_dialog(job_title, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), complex_result)
+                    
+                    # Add to history queue
+                    timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.session_state.history_queue.append({
+                        "timestamp": timestamp_str,
+                        "title": job_title,
+                        "data": complex_result
+                    })
+                    
+                    show_detail_dialog(job_title, timestamp_str, complex_result)
                 
                 except Exception as e:
                     st.error(f"An error occurred during search: {e}")
@@ -730,6 +744,35 @@ with st.container():
                     st.session_state.is_searching = False
 
 st.divider()
+
+# --- History Queue UI ---
+if st.session_state.history_queue:
+    st.subheader("Search History (Session)")
+    
+    # Display in reverse order (newest first)
+    # We use enumerate to get unique indices for keys
+    for i, item in enumerate(reversed(st.session_state.history_queue)):
+        with st.container():
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.markdown(f"**{item['timestamp']}**")
+                # Showing a brief preview could be nice, e.g. the first fixed author vs first candidate
+                preview = "Results View"
+                try:
+                     f_auth = item['data']['inputs']['fixed'].split('\n')[0][:20]
+                     c_auth = item['data']['inputs']['candidate'].split('\n')[0][:20]
+                     preview = f"{f_auth}... vs {c_auth}..."
+                except:
+                    pass
+                st.caption(preview)
+                
+            with col2:
+                # Unique key is important here. 
+                # Since we are iterating reversed list, 'i' will be 0 for the newest item.
+                if st.button("View", key=f"hist_view_{len(st.session_state.history_queue) - 1 - i}"):
+                    show_detail_dialog(item['title'], item['timestamp'], item['data'])
+            
+            st.divider()
 
 
 
