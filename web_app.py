@@ -339,7 +339,56 @@ def fetch_semanticscholar(fixed_given, fixed_family, candidate_given, candidate_
                         "doi": paper.get("externalIds", {}).get("DOI"),
                         "details": f"Match: {best_f}/{best_c}"
                     })
-    except:
+    except Exception as e:
+        st.write(f"SemanticScholar Error: {e}")
+        pass
+    return results
+
+def fetch_doaj(fixed_given, fixed_family, candidate_given, candidate_family):
+    base_url = "https://doaj.org/api/v4/search/articles/"
+    # Query syntax: (bibjson.author.name:"Name1" AND bibjson.author.name:"Name2")
+    f_name = f"{fixed_given} {fixed_family}".strip()
+    c_name = f"{candidate_given} {candidate_family}".strip()
+    
+    query = f'(bibjson.author.name:"{f_name}" AND bibjson.author.name:"{c_name}")'
+    encoded_query = urllib.parse.quote(query)
+    final_url = f"{base_url}{encoded_query}"
+    
+    params = {
+        "page": 1,
+        "pageSize": 50
+    }
+    
+    results = []
+    try:
+        resp = requests.get(final_url, params=params, headers=HEADERS)
+        if resp.status_code == 200:
+            data = resp.json()
+            for item in data.get("results", []):
+                bib = item.get("bibjson", {})
+                
+                # Check year filter
+                year = bib.get("year")
+                if year and int(year) < START_YEAR: continue
+                
+                title = bib.get("title", "No Title")
+                
+                # Extract DOI
+                doi = ""
+                for id_obj in bib.get("identifier", []):
+                    if id_obj.get("type") == "doi":
+                        doi = id_obj.get("id")
+                        break
+                
+                results.append({
+                    "source": "DOAJ",
+                    "title": title,
+                    "year": year,
+                    "doi": doi,
+                    "details": "DOAJ Match" 
+                })
+    except Exception as e:
+        st.write(f"DOAJ Error: {e}")
         pass
     return results
 
@@ -356,6 +405,15 @@ def merge_results(all_results):
         if key in merged:
             merged[key]["sources"].append(r["source"])
             merged[key]["sources"] = list(set(merged[key]["sources"])) # dedup sources
+            
+            # Preserve Match scores if present in the new result but not in existing
+            new_details = r.get("details", "")
+            if "Match" in new_details:
+                current_details = merged[key].get("details", "")
+                if "Match" not in current_details:
+                    merged[key]["details"] = f"{current_details} | {new_details}" if current_details else new_details
+                elif new_details not in current_details: 
+                     merged[key]["details"] = f"{current_details} | {new_details}"
         else:
             r["sources"] = [r["source"]]
             merged[key] = r
@@ -469,10 +527,16 @@ def show_detail_dialog(title, date, result_data):
                     st.caption(f"Sources: {', '.join(sources)}")
                 with col3:
                     doi = paper.get('doi')
+                    details = paper.get('details', '')
+                    content = []
                     if doi:
-                        st.caption(f"[DOI: {doi}](https://doi.org/{doi})")
-                    else:
-                        st.caption(paper.get('details', ''))
+                        content.append(f"[DOI: {doi}](https://doi.org/{doi})")
+                    
+                    # Ensure Details/Match Scores are shown
+                    if details:
+                         content.append(details)
+                    
+                    st.caption(" | ".join(content))
                 
                 st.divider()
     else:
@@ -602,8 +666,9 @@ with st.container():
                                 res_oa = fetch_openalex(f_given, f_family, c_given, c_family)
                                 res_cr = fetch_crossref(f_given, f_family, c_given, c_family)
                                 res_s2 = fetch_semanticscholar(f_given, f_family, c_given, c_family)
+                                res_doaj = fetch_doaj(f_given, f_family, c_given, c_family)
                                 
-                                all_raw_results.extend(res_pm + res_oa + res_cr + res_s2)
+                                all_raw_results.extend(res_pm + res_oa + res_cr + res_s2 + res_doaj)
                                 
                                 processed += 1
                         
