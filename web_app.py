@@ -624,11 +624,22 @@ with st.container():
         """Auto-refreshing status indicator that updates every 2 seconds."""
         current_status, current_message = search_lock.get_status()
         
+        # Initialize transition tracking
+        if 'lock_was_busy' not in st.session_state:
+            st.session_state.lock_was_busy = False
+
         if current_status == "busy":
+            st.session_state.lock_was_busy = True
             st.warning(f"⏳ 系统正在处理其他请求，请稍候... (自动刷新中)")
         elif current_status == "cooldown":
+            st.session_state.lock_was_busy = True
             st.warning(current_message)
         else:
+            # Transition check: If we were busy/cooldown and now ready -> RERUN
+            if st.session_state.lock_was_busy:
+                st.session_state.lock_was_busy = False
+                st.rerun()
+                
             st.success("✅ 系统就绪，可以开始搜索")
     
     # Call the fragment (display only)
