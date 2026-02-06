@@ -618,12 +618,24 @@ with st.container():
         )
         st.session_state.candidate_input = candidate_input
     
-    # Check unified status
-    status, status_message = search_lock.get_status()
+    # Auto-refreshing status display using fragment
+    @st.fragment(run_every=2)
+    def status_display():
+        """Auto-refreshing status indicator that updates every 2 seconds."""
+        current_status, current_message = search_lock.get_status()
+        
+        if current_status == "busy":
+            st.warning(f"⏳ 系统正在处理其他请求，请稍候... (自动刷新中)")
+        elif current_status == "cooldown":
+            st.warning(current_message)
+        else:
+            st.success("✅ 系统就绪，可以开始搜索")
+        
+        return current_status
     
-    if status != "ready":
-        st.warning(status_message)
-
+    # Call the fragment
+    status = status_display()
+    
     # Start Search button
     can_search = (status == "ready")
     
@@ -633,7 +645,8 @@ with st.container():
         else:
             # Acquire lock
             if not search_lock.try_acquire():
-                st.error(status_message if status_message else "⚠️ System busy, please try again.")
+                _, err_msg = search_lock.get_status()
+                st.error(err_msg if err_msg else "⚠️ System busy, please try again.")
             else:
                 try:
                     # Update searching state
