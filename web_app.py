@@ -495,7 +495,22 @@ class SearchLock:
 def get_global_search_lock():
     return SearchLock()
 
-search_lock = get_global_search_lock()
+def get_search_lock_safe():
+    """Safely get the search lock, handling Streamlit Cloud edge cases."""
+    try:
+        lock = get_global_search_lock()
+        # Verify it's actually a SearchLock instance with expected methods
+        if hasattr(lock, 'get_status') and callable(lock.get_status):
+            return lock
+        else:
+            # Invalid cached object, return a new instance
+            st.cache_resource.clear()
+            return get_global_search_lock()
+    except Exception:
+        # Fallback: create a fresh instance
+        return SearchLock()
+
+search_lock = get_search_lock_safe()
 
 # --- Dialog Function for Detail Display ---
 
