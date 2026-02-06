@@ -492,20 +492,20 @@ class SearchLock:
                 pass
 
 @st.cache_resource
-def get_global_search_lock():
+def get_global_search_lock_v2():
     return SearchLock()
 
 def get_search_lock_safe():
     """Safely get the search lock, handling Streamlit Cloud edge cases."""
     try:
-        lock = get_global_search_lock()
+        lock = get_global_search_lock_v2()
         # Verify it's actually a SearchLock instance with expected methods
         if hasattr(lock, 'get_status') and callable(lock.get_status):
             return lock
         else:
             # Invalid cached object, return a new instance
             st.cache_resource.clear()
-            return get_global_search_lock()
+            return get_global_search_lock_v2()
     except Exception:
         # Fallback: create a fresh instance
         return SearchLock()
