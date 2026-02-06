@@ -630,14 +630,13 @@ with st.container():
             st.warning(current_message)
         else:
             st.success("✅ 系统就绪，可以开始搜索")
-        
-        return current_status
     
-    # Call the fragment
-    status = status_display()
+    # Call the fragment (display only)
+    status_display()
     
-    # Start Search button
-    can_search = (status == "ready")
+    # Check status separately for button (outside fragment)
+    current_status, _ = search_lock.get_status()
+    can_search = (current_status == "ready")
     
     if st.button("Start Search", disabled=not can_search):
         if not fixed_input.strip() or not candidate_input.strip():
