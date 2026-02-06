@@ -452,7 +452,7 @@ def merge_results(all_results):
 
 class SearchLock:
     """Global lock to prevent concurrent searches with 30s freeze."""
-    COOLDOWN_SECONDS = 30
+    COOLDOWN_SECONDS = 5
     
     def __init__(self):
         self._lock = threading.Lock()
