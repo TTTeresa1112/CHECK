@@ -26,6 +26,11 @@ if 'is_searching' not in st.session_state:
     st.session_state.is_searching = False
 if 'history_queue' not in st.session_state:
     st.session_state.history_queue = []
+# Preserve user input across reruns
+if 'fixed_input' not in st.session_state:
+    st.session_state.fixed_input = ""
+if 'candidate_input' not in st.session_state:
+    st.session_state.candidate_input = ""
     
 
 USER_EMAIL = os.getenv("USER_EMAIL", "your.email@example.com")
@@ -447,31 +452,31 @@ def merge_results(all_results):
 
 class SearchLock:
     """Global lock to prevent concurrent searches with 30s freeze."""
+    COOLDOWN_SECONDS = 30
+    
     def __init__(self):
         self._lock = threading.Lock()
         self.last_search_finish_time = 0
-        self.COOLDOWN_SECONDS = 30
     
-    @property
-    def is_locked(self):
-        return self._lock.locked()
+    def get_status(self):
+        """
+        Returns unified status: (status_code, message)
+        status_code: 'ready', 'busy', 'cooldown'
+        """
+        if self._lock.locked():
+            return "busy", "⏳ 系统正在处理其他请求，请稍候..."
         
-    def get_remaining_cooldown(self):
         elapsed = time.time() - self.last_search_finish_time
         if elapsed < self.COOLDOWN_SECONDS:
-            return int(self.COOLDOWN_SECONDS - elapsed)
-        return 0
+            remaining = int(self.COOLDOWN_SECONDS - elapsed)
+            return "cooldown", f"❄️ 系统冷却中，请等待 {remaining} 秒后再试"
+        
+        return "ready", None
 
     def try_acquire(self):
-        # Check if already locked
-        if self._lock.locked():
-             return False
-             
-        # Check cooldown
-        if self.get_remaining_cooldown() > 0:
+        status, _ = self.get_status()
+        if status != "ready":
             return False
-            
-        # Try to acquire lock
         return self._lock.acquire(blocking=False)
     
     def release(self):
@@ -580,25 +585,32 @@ with st.container():
     
     col1, col2 = st.columns(2)
     with col1:
-        # manuscript_title input removed
-        fixed_input = st.text_area("Potential COI", height=150)
+        # Use session state to preserve input on rerun
+        fixed_input = st.text_area(
+            "Potential COI", 
+            value=st.session_state.fixed_input,
+            height=150,
+            key="fixed_input_widget"
+        )
+        st.session_state.fixed_input = fixed_input
 
     with col2:
-
-        candidate_input = st.text_area("Author(s)", height=150)
+        candidate_input = st.text_area(
+            "Author(s)", 
+            value=st.session_state.candidate_input,
+            height=150,
+            key="candidate_input_widget"
+        )
+        st.session_state.candidate_input = candidate_input
     
-    # Check rate limiting
-    # Check global status
-    remaining_cooldown = search_lock.get_remaining_cooldown()
-    is_locked = search_lock.is_locked
+    # Check unified status
+    status, status_message = search_lock.get_status()
     
-    if is_locked:
-        st.warning("⚠️ Logic is processing another request. Please wait.")
-    elif remaining_cooldown > 0:
-        st.warning(f"❄️ System Frozen: Wait {remaining_cooldown}s.")
+    if status != "ready":
+        st.warning(status_message)
 
     # Start Search button
-    can_search = not is_locked and remaining_cooldown == 0
+    can_search = (status == "ready")
     
     if st.button("Start Search", disabled=not can_search):
         if not fixed_input.strip() or not candidate_input.strip():
@@ -606,7 +618,7 @@ with st.container():
         else:
             # Acquire lock
             if not search_lock.try_acquire():
-                st.error("⚠️ System busy or in cooldown.")
+                st.error(status_message if status_message else "⚠️ System busy, please try again.")
             else:
                 try:
                     # Update searching state
