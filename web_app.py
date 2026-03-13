@@ -8,32 +8,27 @@ import unicodedata
 import urllib.parse
 from thefuzz import fuzz
 from dotenv import load_dotenv
-# import sqlite3
 import json
 import pandas as pd
 import threading
 import uuid
 from enum import Enum
 
-# --- Configuration & Setup ---
 load_dotenv()
 st.set_page_config(page_title="COI CHECK", layout="wide")
 
-# Initialize simple rate limiting
 if 'last_search_time' not in st.session_state:
     st.session_state.last_search_time = 0
 if 'is_searching' not in st.session_state:
     st.session_state.is_searching = False
 if 'history_queue' not in st.session_state:
     st.session_state.history_queue = []
-# Preserve user input across reruns
 if 'fixed_input' not in st.session_state:
     st.session_state.fixed_input = ""
 if 'candidate_input' not in st.session_state:
     st.session_state.candidate_input = ""
     
-
-USER_EMAIL = os.getenv("USER_EMAIL", "your.email@example.com")
+USER_EMAIL = os.getenv("USER_EMAIL", "teresa.l@explorationpub.com")
 NCBI_API_KEY = os.getenv("NCBI_API_KEY", None)
 S2_API_KEY = os.getenv("S2_API_KEY", None)
 CURRENT_YEAR = datetime.datetime.now().year
@@ -43,10 +38,6 @@ HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36'
 }
 
-# --- Database & Persistence ---
-# --- Database & Persistence Removed ---
-
-# --- Helper Functions (Refactored) ---
 
 def normalize_name(name):
     return re.sub(r'[^a-zA-Z\s,.\u00C0-\u017F]', '', name).strip()
@@ -114,13 +105,12 @@ def generate_wos_search_term(given_name, family_name):
 def generate_google_scholar_author_search_term(family_name, given_name):
     """
     生成用于Google Scholar的作者检索式变体列表。
-    注意：Google Scholar的检索语法非官方且变化较大，此函数基于常见用法。
     """
     variants = set()
     family_name = family_name.strip()
     given_name = given_name.strip()
 
-    # 1. 使用 author: 操作符（非官方支持，但常用）
+    # 1. 使用 author: 操作符
     # 格式：author:"姓 名" 或 author:"姓 首字母"
     if given_name:
         variants.add(f'author:"{given_name} {family_name}"')
@@ -145,8 +135,6 @@ def generate_google_scholar_author_search_term(family_name, given_name):
             variants.add(f'"{normalized_given_name} {family_name}"')
 
     return list(variants)
-
-# --- API Logic (Refactored to return list of dicts) ---
 
 def get_pmids_for_author(given_name, family_name):
     base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
@@ -327,7 +315,7 @@ def fetch_semanticscholar(fixed_given, fixed_family, candidate_given, candidate_
     params = {
         "query": f'"{f_name}" "{c_name}"',
         "fields": "title,year,externalIds,authors",
-        "limit": 50,
+        "limit": 70,
         "year": f"{START_YEAR}-"
     }
     results = []
@@ -378,13 +366,11 @@ def fetch_doaj(fixed_given, fixed_family, candidate_given, candidate_family):
             for item in data.get("results", []):
                 bib = item.get("bibjson", {})
                 
-                # Check year filter
                 year = bib.get("year")
                 if year and int(year) < START_YEAR: continue
                 
                 title = bib.get("title", "No Title")
                 
-                # Extract DOI
                 doi = ""
                 for id_obj in bib.get("identifier", []):
                     if id_obj.get("type") == "doi":
@@ -422,9 +408,6 @@ def merge_results(all_results):
                     merged[key]["matched_pairs"] = []
                 merged[key]["matched_pairs"].append(new_pair)
 
-
-            # Preserve Match scores if present in the new result but not in existing
-
             merged[key]["sources"] = list(set(merged[key]["sources"])) # dedup sources
             
             # Preserve Match scores if present in the new result but not in existing
@@ -437,9 +420,7 @@ def merge_results(all_results):
                      merged[key]["details"] = f"{current_details} | {new_details}"
         else:
             r["sources"] = [r["source"]]
-            # --- 修改：在第一次存入时就初始化匹配对列表 ---
             r["matched_pairs"] = [r.get("matched_pair")] if r.get("matched_pair") else []
-            # ----------------------------------------
             merged[key] = r
     
     final_list = list(merged.values())
@@ -447,8 +428,6 @@ def merge_results(all_results):
     final_list.sort(key=lambda x: str(x.get('year', '0')), reverse=True)
     return final_list
 
-
-# --- Simple Global Lock System ---
 
 class SearchLock:
     """Global lock to prevent concurrent searches with 30s freeze."""
@@ -512,7 +491,6 @@ def get_search_lock_safe():
 
 search_lock = get_search_lock_safe()
 
-# --- Dialog Function for Detail Display ---
 
 @st.dialog("Detailed Search Results", width="large")
 def show_detail_dialog(title, date, result_data):
@@ -520,12 +498,10 @@ def show_detail_dialog(title, date, result_data):
     st.subheader(f"{title}")
     st.caption(f"Search Date: {date}")
     
-    # Get data structure
     papers = result_data.get("papers", [])
     search_terms = result_data.get("search_terms", {})
     inputs = result_data.get("inputs", {})
     
-    # Show inputs if available
     if inputs:
         with st.expander("Original Input", expanded=False):
             col1, col2 = st.columns(2)
@@ -536,7 +512,6 @@ def show_detail_dialog(title, date, result_data):
                 st.markdown("**Author(s):**")
                 st.code(inputs.get("candidate", "N/A"), language=None)
     
-    # Show search terms if available
     if search_terms:
         with st.expander("Generated Search Queries", expanded=False):
             for author_name, terms in search_terms.items():
@@ -550,7 +525,6 @@ def show_detail_dialog(title, date, result_data):
                     st.code(terms.get("gs", "N/A"), language=None)
                 st.divider()
     
-    # Show papers
     st.subheader(f"Found {len(papers)} Potential Collaboration(s)")
     
     if papers:
@@ -588,10 +562,6 @@ def show_detail_dialog(title, date, result_data):
         st.info("No collaboration papers found in the databases.")
 
 # --- Main App ---
-
-# Initialize database
-# init_db()
-
 
 
 with st.container():
@@ -642,10 +612,8 @@ with st.container():
                 
             st.success("✅ 系统就绪，可以开始搜索")
     
-    # Call the fragment (display only)
     status_display()
     
-    # Check status separately for button (outside fragment)
     current_status, _ = search_lock.get_status()
     can_search = (current_status == "ready")
     
@@ -659,7 +627,6 @@ with st.container():
                 st.error(err_msg if err_msg else "⚠️ System busy, please try again.")
             else:
                 try:
-                    # Update searching state
                     st.session_state.is_searching = True
                     
                     job_title = "COI Check Results"
@@ -672,10 +639,8 @@ with st.container():
                     all_raw_results = []
                     generated_search_terms = {}
                     
-                    # Pre-generate Combined Search Queries
                     generated_queries = {} 
                     
-                    # 1. Prepare all candidate components
                     candidate_wos_parts = []
                     candidate_gs_parts = []
                     
@@ -683,26 +648,21 @@ with st.container():
                         c_g, c_f = parse_semicolon_name(c_name)
                         if not c_f: continue
                         
-                        # WOS variants for this candidate
                         c_wos_vars = generate_wos_search_term(c_g, c_f)
                         if c_wos_vars:
                             candidate_wos_parts.append("(" + " OR ".join(c_wos_vars) + ")")
                             
-                        # GS variants for this candidate
                         c_gs_vars = generate_google_scholar_author_search_term(c_f, c_g)
                         if c_gs_vars:
                             candidate_gs_parts.append("(" + " OR ".join(c_gs_vars) + ")")
                     
-                    # Join all candidates with OR
                     all_candidates_wos_str = " OR ".join(candidate_wos_parts)
                     all_candidates_gs_str = " OR ".join(candidate_gs_parts)
                     
-                    # 2. For each Fixed Author, create the AND query
                     for f_name in fixed_authors:
                         f_g, f_f = parse_semicolon_name(f_name)
                         if not f_f: continue
                         
-                        # WOS
                         f_wos_vars = generate_wos_search_term(f_g, f_f)
                         if f_wos_vars and all_candidates_wos_str:
                             fixed_wos_part = " OR ".join(f_wos_vars)
@@ -710,7 +670,6 @@ with st.container():
                         else:
                             final_wos = "Could not generate query (missing terms)"
 
-                        # GS
                         f_gs_vars = generate_google_scholar_author_search_term(f_f, f_g)
                         if f_gs_vars and all_candidates_gs_str:
                             fixed_gs_part = " OR ".join(f_gs_vars)
@@ -724,7 +683,6 @@ with st.container():
                             "gs": final_gs
                         }
                     
-                    # Use st.status for a better progress experience
                     with st.status("Checking potential conflicts...", expanded=True) as status:
                         processed = 0
                         total = len(fixed_authors) * len(candidate_authors)
@@ -757,26 +715,20 @@ with st.container():
                         status.update(label="Search Completed!", state="complete", expanded=False)
                     unique_results = merge_results(all_raw_results)
                     
-                    # Database save reset
                     input_data = {
                         "fixed": fixed_input,
                         "candidate": candidate_input
                     }
                         
-                    # save_results_to_db call removed
-                    # st.toast(f"✓ Results saved: '{save_name}'")
                     
                     st.success("Search completed successfully!")
 
-                    # Auto - Popup
-                    # wrapping in a clean structure for the dialog
                     complex_result = {
                         "papers": unique_results,
                         "search_terms": generated_queries,
                         "inputs": input_data
                     }
                     
-                    # Add to history queue
                     timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     st.session_state.history_queue.append({
                         "timestamp": timestamp_str,
@@ -795,12 +747,9 @@ with st.container():
 
 st.divider()
 
-# --- History Queue UI ---
 if st.session_state.history_queue:
     st.subheader("Search History (Session)")
     
-    # Display in reverse order (newest first)
-    # We use enumerate to get unique indices for keys
     for i, item in enumerate(reversed(st.session_state.history_queue)):
         with st.container():
             col1, col2 = st.columns([4, 1])
